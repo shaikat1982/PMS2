@@ -1,6 +1,6 @@
 import { all, get, run, tx } from './db.js';
 import { notify } from './notify.js';
-import { cleanOrphanFiles } from './routes/attachments.js';
+import { cleanOrphanFiles } from './api/attachments.js';
 import { addDays, localDate } from './util.js';
 
 /** Record a reminder; returns false when it was already sent for this due date. */
@@ -52,15 +52,16 @@ export async function sendReminders() {
   }
 }
 
+/** Reminders and attachment cleanup. Also run by /api/cron on hosts without long-running processes. */
+export async function runHourlyJobs() {
+  await sendReminders();
+  await cleanOrphanFiles();
+}
+
 export function startJobs() {
-  const runAll = async () => {
-    try {
-      await sendReminders();
-      await cleanOrphanFiles();
-    } catch (err) {
-      console.error('Background job failed:', err);
-    }
-  };
-  setTimeout(runAll, 5000).unref();
-  setInterval(runAll, 60 * 60 * 1000).unref();
+  if (globalThis.__instacallJobTimer) return;
+  const runAll = () => runHourlyJobs().catch((err) => console.error('Background job failed:', err));
+  setTimeout(runAll, 5000).unref?.();
+  globalThis.__instacallJobTimer = setInterval(runAll, 60 * 60 * 1000);
+  globalThis.__instacallJobTimer.unref?.();
 }

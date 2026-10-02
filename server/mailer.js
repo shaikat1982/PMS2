@@ -8,7 +8,7 @@ const SMTP_HOST = process.env.SMTP_HOST;
 const PORT = Number(process.env.SMTP_PORT) || 587;
 export const MAIL_FROM = process.env.MAIL_FROM || process.env.SMTP_USER || 'Instacall PM <no-reply@instacall.local>';
 // Links in emails point here. Set APP_URL in production to the address people open the app at.
-export const APP_URL = (process.env.APP_URL || 'http://localhost:5173').replace(/\/+$/, '');
+export const APP_URL = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
 const MAX_ATTEMPTS = 5;
 
 export const mailEnabled = () => Boolean(SMTP_HOST);
@@ -53,7 +53,7 @@ export async function queueEmail(to, subject, { text, html }) {
 }
 
 let sending = false;
-async function processQueue() {
+export async function processQueue() {
   if (sending || !mailEnabled()) return;
   sending = true;
   try {
@@ -93,7 +93,9 @@ export function startMailer() {
     return;
   }
   console.log(`  Email notifications are on (SMTP ${SMTP_HOST}:${PORT}).`);
-  setInterval(() => processQueue().catch((e) => console.error(e)), 15000).unref();
+  if (globalThis.__instacallMailTimer) return;
+  globalThis.__instacallMailTimer = setInterval(() => processQueue().catch((e) => console.error(e)), 15000);
+  globalThis.__instacallMailTimer.unref?.();
   processQueue().catch((e) => console.error(e));
 }
 

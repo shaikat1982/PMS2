@@ -70,8 +70,8 @@ The demo data includes an example repository with sample commits and pull reques
 
 ## Tech stack
 
-- **Backend:** Node.js 20.6 or later, Express 5 and PostgreSQL 13 or later, through the `pg` driver. Authentication uses JWTs. Email goes out through Nodemailer over SMTP.
-- **Frontend:** React 19, React Router and Vite. The styling is plain CSS, with no UI framework.
+- **Framework:** Next.js 16 (App Router) with React 19, on Node.js 20.9 or later. The screens are App Router pages, and the API is made of Next.js Route Handlers under `app/api`. The styling is plain CSS, with no UI framework.
+- **Data:** PostgreSQL 13 or later, through the `pg` driver. Authentication uses JWTs. Email goes out through Nodemailer over SMTP.
 
 ## Getting started
 
@@ -81,7 +81,7 @@ You need a PostgreSQL database. The quickest way to get one is Docker:
 npm install
 npm run db:up    # starts PostgreSQL in Docker (docker-compose.yml) on localhost:5432
 npm run seed     # optional: load demo users, projects and tasks
-npm run dev      # API on :3001, web app on http://localhost:5173
+npm run dev      # app and API on http://localhost:3000
 ```
 
 Without Docker, install PostgreSQL yourself, create an empty database, and set `DATABASE_URL` to point at it. If you don't set it, the app uses `postgres://postgres:postgres@localhost:5432/instacall`, which matches the Docker setup:
@@ -107,15 +107,17 @@ The demo data (`npm run seed`) adds 9 more users, all with the password `passwor
 ## Production
 
 ```bash
-npm run build    # builds the frontend into dist/
-npm start        # serves the API and the built app on PORT (default 3001)
+npm run build    # production build into .next/
+npm start        # serves the app and API on PORT (default 3000)
 ```
+
+When the server starts (`instrumentation.js`), it updates the database tables, creates the first admin account if there isn't one, and starts the email and reminder jobs.
 
 Environment variables:
 
 | Variable        | Default     | Purpose                                                              |
 |-----------------|-------------|----------------------------------------------------------------------|
-| `PORT`          | `3001`      | HTTP port                                                            |
+| `PORT`          | `3000`      | HTTP port                                                            |
 | `DATABASE_URL`  | `postgres://postgres:postgres@localhost:5432/instacall` | PostgreSQL connection string |
 | `DATABASE_SSL`  | off         | Set to `true` for hosted databases that require SSL (most cloud providers). If the provider uses a self-signed certificate, also set `DATABASE_SSL_REJECT_UNAUTHORIZED=false`. |
 | `DATABASE_POOL_SIZE` | `10`   | Maximum number of database connections for each app server |
@@ -123,13 +125,14 @@ Environment variables:
 | `DATA_DIR`      | `./data`    | Where attachments and the generated JWT secret are kept |
 | `JWT_SECRET`    | auto        | Token signing secret. If not set, one is generated and saved to `DATA_DIR`. |
 | `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` | see above | First admin account |
-| `APP_URL`       | `http://localhost:5173` | The address people open the app at. Links in emails point here. |
+| `APP_URL`       | `http://localhost:3000` | The address people open the app at. Links in emails point here. |
 | `SMTP_HOST`     | —           | SMTP server. Email notifications are off until this is set. |
 | `SMTP_PORT`     | `587`       | SMTP port. Port 465 uses TLS automatically. |
 | `SMTP_SECURE`   | auto        | Set to `true` or `false` to override the TLS choice. |
 | `SMTP_USER` / `SMTP_PASS` | — | SMTP login |
 | `MAIL_FROM`     | `SMTP_USER` | The From address, e.g. `Instacall PM <pm@example.com>` |
 | `MAX_UPLOAD_MB` | `25`        | Largest attachment allowed, in MB |
+| `CRON_SECRET`   | —           | Turns on `/api/cron` for hosts without long-running servers (see below) |
 
 Emails are queued in the database and sent in the background. A failed send is retried up to 5 times. Admins can check delivery and send a test email from **Inbox → Notification settings**.
 
@@ -140,6 +143,15 @@ Attachments are stored in `DATA_DIR/attachments`. Git access tokens are encrypte
 **Running more than one app server:** several servers can share one database. Set the same `JWT_SECRET` on each, and give them a shared `DATA_DIR` (a network volume) so they all see the same attachments. Migrations, email sending and reminders are designed so that only one server does each job.
 
 Put the app behind a reverse proxy with HTTPS (nginx, Caddy, IIS) when you expose it to the internet.
+
+### Hosting
+
+The app works best on a host that keeps a Node.js server running, such as a VPS, Docker, Railway, Render or Fly.io. On those hosts everything works with `npm run build` and `npm start`.
+
+Serverless hosts such as Vercel can run the app, with two caveats:
+
+- **Background jobs:** there's no long-running process for them, so set `CRON_SECRET` and schedule `GET /api/cron` (with `Authorization: Bearer <CRON_SECRET>`) to run every few minutes. That sends queued emails and due/overdue reminders. Vercel Cron sends this header automatically.
+- **Attachments:** they're saved to the local disk (`DATA_DIR`), which serverless functions don't keep. Use a host with a persistent disk if you need attachments.
 
 ### Moving from the old SQLite version
 
@@ -152,8 +164,16 @@ Earlier versions stored data in `data/instacall.db` (SQLite). To bring that data
 ## Project layout
 
 ```
+app/                Next.js App Router
+  layout.jsx        Root layout: global styles and the app shell
+  (app)/            Pages: dashboard, my-tasks, inbox, calendar, tasks, team, spaces/[id], projects/[id]
+  api/              Route Handlers, one route.js per URL (e.g. api/tasks/[id]/route.js)
+instrumentation.js  Runs once at server start: migrations, first admin, background jobs
 server/
-  index.js          Express app and static hosting
+  api/              The API logic, one module per area (tasks, projects, planning, git, …),
+                    called from the route handlers in app/api
+  http.js           Turns an API function into a Route Handler (auth, JSON, errors)
+  startup.js        Database setup and background jobs on server start
   db.js             PostgreSQL pool, query helpers, transactions and schema migrations
   auth.js           JWT auth, role checks, signed file links, token encryption
   bootstrap.js      First-run admin account and default spaces
@@ -165,13 +185,14 @@ server/
   mailer.js         SMTP email outbox and sender
   reminders.js      Hourly due-soon and overdue alerts, attachment cleanup
   tools/            import-sqlite.js: one-time import from the old SQLite database
-  routes/           auth, users, teams, spaces, projects, tasks, dashboard, notifications,
-                    planning (phases, milestones, releases, dependencies), git, attachments
-client/src/
-  main.jsx          Routes and app shell
+ui/                 Client components used by the pages
+  AppShell.jsx      Sign-in gate, sidebar layout, task and create-task modals
   store.jsx         Global state (user, spaces, projects, users) and the useTasks hook
+  router.js         Small adapter over next/navigation (Link, NavLink, useSearchParams, …)
   components/       Layout, task detail modal, create modal, pickers, modals, attachments, Git links
   views/            ListView, BoardView, CalendarView
-  pages/            Dashboard, MyTasks, AllTasks/Calendar, Space, Team, Inbox, Login
+  screens/          Dashboard, MyTasks, AllTasks/Calendar, Space, Team, Inbox, Login
   project/          Project page tabs: Overview, Timeline (Gantt), Planning, Development, Reports
 ```
+
+The open task is part of the URL (`?task=42`), as are the project tab and the open phase, milestone or release (`?tab=planning&item=MS-5`). Any view can be shared as a link.

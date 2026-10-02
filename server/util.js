@@ -23,10 +23,14 @@ export const badRequest = (message) => new HttpError(400, message);
 export const notFound = (what = 'Resource') => new HttpError(404, `${what} not found`);
 export const forbidden = () => new HttpError(403, 'You do not have permission to do that');
 
-export function errorHandler(err, req, res, _next) {
-  const status = err.status || (err.type === 'entity.parse.failed' ? 400 : 500);
+/** 201 Created with a JSON body. */
+export const created = (data) => Response.json(data, { status: 201 });
+
+/** JSON error response; unexpected errors are logged and hidden from the client. */
+export function errorResponse(err) {
+  const status = err.status || 500;
   if (status >= 500) console.error(err);
-  res.status(status).json({ error: status >= 500 ? 'Internal server error' : err.message });
+  return Response.json({ error: status >= 500 ? 'Internal server error' : err.message }, { status });
 }
 
 export function idParam(value, name = 'id') {

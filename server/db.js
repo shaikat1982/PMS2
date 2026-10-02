@@ -1,5 +1,4 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
@@ -8,7 +7,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Attachments and the JWT secret file live here; the data itself is in PostgreSQL. */
 export const DATA_DIR = process.env.DATA_DIR || path.resolve(__dirname, '../data');
-fs.mkdirSync(DATA_DIR, { recursive: true });
 
 export const DATABASE_URL = process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/instacall';
 
@@ -24,7 +22,9 @@ types.setTypeParser(types.builtins.TIMESTAMPTZ, (v) => new Date(v).toISOString()
 types.setTypeParser(types.builtins.INT8, (v) => Number(v));
 types.setTypeParser(types.builtins.NUMERIC, (v) => Number(v));
 
-export const pool = new pg.Pool({
+// One pool per process. Next.js dev mode re-evaluates modules on every change, so the
+// pool is kept on globalThis instead of being recreated (and leaking connections).
+export const pool = globalThis.__instacallPool ??= new pg.Pool({
   connectionString: DATABASE_URL,
   max: Number(process.env.DATABASE_POOL_SIZE) || 10,
   ssl: process.env.DATABASE_SSL === 'true' ? { rejectUnauthorized: process.env.DATABASE_SSL_REJECT_UNAUTHORIZED !== 'false' } : undefined,
@@ -32,7 +32,7 @@ export const pool = new pg.Pool({
 
 /** SQL for the calendar day of a timestamp column in the app's time zone. */
 export const localDay = (column) => `(${column} AT TIME ZONE '${TIMEZONE}')::date`;
-pool.on('error', (err) => console.error('PostgreSQL connection error:', err.message));
+if (!pool.listenerCount('error')) pool.on('error', (err) => console.error('PostgreSQL connection error:', err.message));
 
 // Queries are written with "?" placeholders; they become $1, $2… here (skipping quoted text).
 const converted = new Map();

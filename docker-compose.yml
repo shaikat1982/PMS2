@@ -1,0 +1,21 @@
+# Local PostgreSQL for development:  npm run db:up
+# Matches the default DATABASE_URL (postgres://postgres:postgres@localhost:5432/instacall).
+services:
+  db:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: instacall
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d instacall"]
+      interval: 5s
+      retries: 10
+
+volumes:
+  pgdata:

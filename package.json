@@ -1,0 +1,33 @@
+{
+  "name": "instacall-project-management",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Project management for software development, SEO, digital marketing and operations teams",
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c magenta,cyan \"node --watch-path=server server/index.js\" \"vite\"",
+    "build": "vite build",
+    "start": "node server/index.js",
+    "seed": "node server/seed.js",
+    "db:up": "docker compose up -d db",
+    "import:sqlite": "node server/tools/import-sqlite.js"
+  },
+  "engines": {
+    "node": ">=20.6"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^10.0.13",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.2.0",
+    "concurrently": "^9.2.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router-dom": "^7.18.4",
+    "vite": "^7.3.6"
+  }
+}
